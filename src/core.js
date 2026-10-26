@@ -47,6 +47,8 @@ export function dedupe(items) {
 
 // Match explicit hosts; do not label an unknown affiliate as its parent newspaper.
 const PRESS_NAMES = {
+  "beopbo.com": "법보신문",
+  "view.asiae.co.kr": "아시아경제",
   "weekly.chosun.com": "주간조선",
   "biz.chosun.com": "조선비즈",
   "health.chosun.com": "헬스조선",
