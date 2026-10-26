@@ -1,5 +1,53 @@
 import { collectionGate, limitedBody } from './limits.js';
-import { rangeOf, normalizeNews, dedupe } from './core.js';
+import { rangeOf, normalizeNews, dedupe, clean, pressName } from './core.js';
+// Read publisher-provided metadata, never infer a publisher from the headline.
+export function metadataPress(html) {
+  for (const tag of html.replace(/<!--[\s\S]*?-->/g, '').match(/<meta\b[^>]*>/gi) || []) {
+    const attrs = {};
+    for (const m of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g)) attrs[m[1].toLowerCase()] = m[2] ?? m[3] ?? m[4];
+    if ((attrs.property || attrs.name || '').toLowerCase() !== 'og:site_name') continue;
+    const name = clean(attrs.content || '').replace(/[<>\u0000-\u001f]/g, '').trim();
+    if (name.length >= 2 && name.length <= 60 && !/https?:\/\/|�/.test(name)) return name;
+  }
+  return '';
+}
+export async function discoverPress(items, origin) {
+  const groups = new Map();
+  for (const item of items) {
+    const u = new URL(item.url), host = u.hostname.toLowerCase();
+    if (pressName(item.url) !== host.replace(/^www\./, '')) continue;
+    // Only public DNS-style HTTPS destinations; never follow arbitrary redirects.
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(host) || /\.(localhost|local|internal|test|example|invalid)$/.test(host) || u.username || u.password || (u.port && u.port !== '443')) continue;
+    u.protocol = 'https:';
+    if (!groups.has(host)) groups.set(host, {url:u.href, items:[]});
+    groups.get(host).items.push(item);
+  }
+  const cache = globalThis.caches?.default;
+  // Bound additional requests and latency, even for large search results.
+  await Promise.all([...groups].slice(0, 6).map(async ([host, group]) => {
+    try {
+      const key = new Request(origin + '/__press_metadata_v1/' + host);
+      const hit = await cache?.match(key).catch(() => undefined);
+      let name;
+      if (hit) name = (await hit.json()).name;
+      else {
+        const response = await fetch(group.url, {redirect:'manual', signal:AbortSignal.timeout(3500), headers:{Accept:'text/html'}});
+        if (!response.ok || !response.headers.get('Content-Type')?.includes('text/html')) { await response.body?.cancel(); return; }
+        const reader = response.body.getReader(), chunks = []; let size = 0;
+        try {
+          while (size < 131072) { const {done,value} = await reader.read(); if(done)break; const part=value.subarray(0,131072-size);chunks.push(part);size+=part.length; }
+        } finally { await reader.cancel(); }
+        const bytes = new Uint8Array(size); let offset=0;
+        for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
+        const charset = response.headers.get('Content-Type').match(/charset=["']?([^;\s"']+)/i)?.[1] || 'utf-8';
+        name = metadataPress(new TextDecoder(charset).decode(bytes));
+        await cache?.put(key, Response.json({name}, {headers:{'Cache-Control':`public,max-age=${name ? 86400 : 600}`}})).catch(() => {});
+      }
+      if (name) for (const item of group.items) item.source = name;
+    } catch { /* Metadata failure must never discard otherwise valid news. */ }
+  }));
+  return items;
+}
 const institutions = [
   { name:'대한출판문화협회', url:'https://member.kpa21.or.kr/kpa_bbs/', detail:'자동 접근 확인 화면이 확인되어 수집 연결 대기 중입니다.' },
   { name:'한국출판인회의', url:'https://www.kopus.org/publishernotice/', detail:'접근 오류가 확인되어 수집 연결 대기 중입니다.' },
@@ -53,9 +101,10 @@ export default { async fetch(request,env) {
     try {const text=await limitedBody(request); const body=JSON.parse(text); range=rangeOf(body.start,body.end);} catch(e) {return json({error:e.message},400);}
     if(!env.NAVER_CLIENT_ID||!env.NAVER_CLIENT_SECRET)return json({error:'Cloudflare에 NAVER_CLIENT_ID와 NAVER_CLIENT_SECRET을 Secret으로 등록해주세요.'},503);
     const cache=globalThis.caches?.default;
-    const cacheKey=new Request(url.origin+'/__news_cache_hub_v2/'+range.start+'/'+range.end);
+    const cacheKey=new Request(url.origin+'/__news_cache_hub_v3/'+range.start+'/'+range.end);
     try {const hit=await cache?.match(cacheKey);if(hit){const data=await hit.json();if(Date.parse(data.cacheUntil)>Date.now())return json({...data,cached:true});}}catch{/* Cache failure must not prevent collection. */}
     const result=await collectNews(env,range);
+    await discoverPress(result.items,url.origin);
     const data={...result,start:range.start,end:range.end,collectedAt:new Date().toISOString(),cached:false,institutions:institutions.map(x=>({...x,state:'pending'}))};
     if(result.statuses.every(x=>x.state==='ok')){
       data.cacheUntil=new Date(Date.now()+300000).toISOString();
@@ -66,3 +115,4 @@ export default { async fetch(request,env) {
   if(url.pathname.startsWith('/api/')) return json({error:'찾을 수 없는 경로입니다.'},404);
   return secure(await env.ASSETS.fetch(request));
 }};
+
