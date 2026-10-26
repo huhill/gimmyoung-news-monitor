@@ -3,7 +3,7 @@
   "name": "gimmyoung-news-monitor",
   "main": "src/worker.js",
   "compatibility_date": "2026-10-26",
-  "workers_dev": false,
+  "workers_dev": true,
   "preview_urls": false,
   "assets": {
     "directory": "./public",
