@@ -60,3 +60,7 @@ Node.js 22 이상: npm install → npm test → npm run check. npm run preview�
 
 - 이관 안내: https://guide.ncloud-docs.com/docs/apihub-migration
 - 한시적 무료 안내: https://guide.ncloud-docs.com/docs/apihub-overview
+
+## 자동 배포 연결 복구
+
+Cloudflare Builds에 Git 계정 연결 끊김 또는 API token unavailable 경고가 있으면 저장소 접근 권한과 배포 토큰을 복구해야 합니다. 복구 후 main의 새 커밋으로 최신 코드 빌드를 실행하고 Deployments에서 새 Build의 성공 여부를 확인하세요. Runtime Secret 변경만으로는 GitHub 최신 코드를 가져오지 않습니다.
