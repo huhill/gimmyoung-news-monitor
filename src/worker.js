@@ -1,4 +1,4 @@
-import { authorize, login, loginPage, clearCookie } from './auth.js';
+import { collectionGate, limitedBody } from './limits.js';
 import { rangeOf, normalizeNews, dedupe } from './core.js';
 const institutions = [
   { name:'대한출판문화협회', url:'https://member.kpa21.or.kr/kpa_bbs/', detail:'자동 접근 확인 화면이 확인되어 수집 연결 대기 중입니다.' },
@@ -28,7 +28,7 @@ export async function collectNews(env, range) {
         const u=new URL('https://openapi.naver.com/v1/search/news.json');
         u.search=new URLSearchParams({query,display:'100',sort:'date',start:String(start)});
         const r=await fetch(u,{headers:{'X-Naver-Client-Id':env.NAVER_CLIENT_ID,'X-Naver-Client-Secret':env.NAVER_CLIENT_SECRET},signal:AbortSignal.timeout(12000)});
-        if(!r.ok) throw new Error(`검색 서버 응답 오류 (${r.status})`);
+        if(!r.ok) throw new Error(r.status===401?'네이버 인증키가 올바르지 않습니다. Client ID와 Client Secret을 확인해주세요.':r.status===403?'네이버 애플리케이션의 검색 API 권한을 확인해주세요.':r.status===429?'네이버 API 호출 한도에 도달했습니다. 잠시 후 다시 시도해주세요.':`검색 서버 응답 오류 (${r.status})`);
         const data=await r.json(); if(!Array.isArray(data.items)) throw new Error('검색 응답 형식을 확인할 수 없습니다.');
         for(const raw of data.items) { const item=normalizeNews(raw,query,range); if(item) items.push(item); }
         if(data.items.length<100 || start+data.items.length-1>=data.total || data.items.some(x=>Date.parse(x.pubDate)<range.from)) {complete=true;break;}
@@ -41,32 +41,27 @@ export async function collectNews(env, range) {
 export default { async fetch(request,env) {
   const url=new URL(request.url);
   if(url.pathname==='/robots.txt') return secure(new Response('User-agent: *\nDisallow: /\n',{headers:{'Content-Type':'text/plain;charset=utf-8'}}));
-  if(url.pathname==='/styles.css')return secure(await env.ASSETS.fetch(request));
-  if(url.pathname==='/login'){
-    if(request.method==='GET')return secure(new Response(loginPage(),{headers:{'Content-Type':'text/html;charset=utf-8'}}));
-    if(request.method!=='POST')return json({error:'허용되지 않은 요청입니다.'},405);
-    const result=await login(request,env);
-    if(result.cookie)return secure(new Response(null,{status:303,headers:{Location:'/','Set-Cookie':result.cookie}}));
-    return secure(new Response(loginPage(result.error),{status:result.status,headers:{'Content-Type':'text/html;charset=utf-8'}}));
-  }
-  if(url.pathname==='/logout'){
-    if(request.method!=='POST'||request.headers.get('Origin')!==url.origin)return json({error:'허용되지 않은 요청입니다.'},403);
-    return secure(new Response(null,{status:303,headers:{Location:'/login','Set-Cookie':clearCookie()}}));
-  }
-  const identity=await authorize(request,env);
-  if(!identity.ok){
-    if(url.pathname.startsWith('/api/'))return json({error:identity.status===503?'APP_PASSWORD 설정이 필요합니다.':'로그인이 필요합니다. 페이지를 새로고침해주세요.'},identity.status);
-    return secure(new Response(loginPage(identity.status===503?'관리자가 APP_PASSWORD를 등록하면 사용할 수 있습니다.':''),{status:identity.status===503?503:200,headers:{'Content-Type':'text/html;charset=utf-8'}}));
-  }
+  if(url.pathname==='/login'||url.pathname==='/logout')return secure(new Response(null,{status:303,headers:{Location:'/'}}));
   if(url.pathname==='/api/config') return json({newsReady:!!(env.NAVER_CLIENT_ID&&env.NAVER_CLIENT_SECRET),institutions});
   if(url.pathname==='/api/collect') {
     if(request.method!=='POST') return json({error:'허용되지 않은 요청입니다.'},405);
     if(request.headers.get('Origin')!==url.origin) return json({error:'동일 사이트에서만 수집할 수 있습니다.'},403);
     if(!request.headers.get('Content-Type')?.startsWith('application/json')) return json({error:'JSON 요청이 필요합니다.'},415);
+    const gate=await collectionGate(request,env);
+    if(gate)return gate;
     let range;
-    try {const text=await request.text(); if(text.length>1024) throw new Error('요청이 너무 큽니다.'); const body=JSON.parse(text); range=rangeOf(body.start,body.end);} catch(e) {return json({error:e.message},400);}
+    try {const text=await limitedBody(request); const body=JSON.parse(text); range=rangeOf(body.start,body.end);} catch(e) {return json({error:e.message},400);}
+    if(!env.NAVER_CLIENT_ID||!env.NAVER_CLIENT_SECRET)return json({error:'Cloudflare에 NAVER_CLIENT_ID와 NAVER_CLIENT_SECRET을 Secret으로 등록해주세요.'},503);
+    const cache=globalThis.caches?.default;
+    const cacheKey=new Request(url.origin+'/__news_cache_v1/'+range.start+'/'+range.end);
+    try {const hit=await cache?.match(cacheKey);if(hit){const data=await hit.json();if(Date.parse(data.cacheUntil)>Date.now())return json({...data,cached:true});}}catch{/* Cache failure must not prevent collection. */}
     const result=await collectNews(env,range);
-    return json({...result,start:range.start,end:range.end,collectedAt:new Date().toISOString(),institutions:institutions.map(x=>({...x,state:'pending'}))});
+    const data={...result,start:range.start,end:range.end,collectedAt:new Date().toISOString(),cached:false,institutions:institutions.map(x=>({...x,state:'pending'}))};
+    if(result.statuses.every(x=>x.state==='ok')){
+      data.cacheUntil=new Date(Date.now()+300000).toISOString();
+      try {await cache?.put(cacheKey,Response.json(data,{headers:{'Cache-Control':'public,max-age=300'}}));}catch{/* Best-effort edge cache. */}
+    }
+    return json(data);
   }
   if(url.pathname.startsWith('/api/')) return json({error:'찾을 수 없는 경로입니다.'},404);
   return secure(await env.ASSETS.fetch(request));

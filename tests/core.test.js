@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {rangeOf,normalizeNews,dedupe,classify,safeURL,clean} from '../src/core.js';
 import worker,{collectNews} from '../src/worker.js';
-import {authorize} from '../src/auth.js';
 const range=rangeOf('2026-10-19','2026-10-25');
 const raw=(date,url='https://news.example/a')=>({pubDate:date,originallink:url,link:url,title:'<b>김영사</b> 신간',description:'도서 소식'});
 test('한국시간 경계: 월요일 포함, 다음 월요일 제외',()=>{
@@ -24,12 +23,6 @@ test('동일 링크 통합, 다른 매체 기사 유지',()=>{
   assert.equal(dedupe([a,b,c]).length,2);
 });
 test('링크 및 검색 결과 정리',()=>{assert.equal(safeURL('javascript:alert(1)'),'');assert.equal(clean('<b>책</b> &amp; &#39;소식&#39;'),"책 & '소식'");});
-test('인증 설정 누락과 위조 토큰은 차단',async()=>{
-  const request=new Request('https://monitor.example/api/collect');
-  assert.equal((await authorize(request,{})).status,503);
-  const result=await worker.fetch(request,{});assert.equal(result.status,503);assert.match(result.headers.get('X-Robots-Tag'),/noindex/);
-  const response=await worker.fetch(new Request('https://monitor.example/robots.txt'),{});assert.match(await response.text(),/Disallow: \//);
-});
 test('인증키 없는 뉴스 수집은 빈 결과 성공으로 보고하지 않음',async()=>{
   const result=await collectNews({},range);assert.equal(result.statuses[0].state,'setup');
 });

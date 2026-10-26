@@ -10,5 +10,7 @@
     "check": "node --check src/worker.js && node --check public/app.js",
     "preview": "node scripts/preview.mjs"
   },
-  "devDependencies": { "wrangler": "^4.0.0" }
+  "devDependencies": {
+    "wrangler": "^4.36.0"
+  }
 }

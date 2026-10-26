@@ -9,5 +9,23 @@
     "directory": "./public",
     "binding": "ASSETS",
     "run_worker_first": true
-  }
+  },
+  "ratelimits": [
+    {
+      "name": "COLLECT_IP_LIMITER",
+      "namespace_id": "14340356561",
+      "simple": {
+        "limit": 6,
+        "period": 60
+      }
+    },
+    {
+      "name": "COLLECT_TOTAL_LIMITER",
+      "namespace_id": "14340356562",
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    }
+  ]
 }
