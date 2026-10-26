@@ -30,7 +30,7 @@ test('same range uses five-minute cache, different range fetches again, expired 
   const first=await(await worker.fetch(req(),env)).json();assert.equal(first.cached,false);assert.equal(count,3);
   const again=await(await worker.fetch(req(),env)).json();assert.equal(again.cached,true);assert.equal(count,3);assert.equal(again.collectedAt,first.collectedAt);
   await worker.fetch(req({start:'2026-10-20',end:'2026-10-25'}),env);assert.equal(count,6);
-  const cacheKey='https://monitor.example/__news_cache_hub_v2/2026-10-19/2026-10-25';map.set(cacheKey,Response.json({...first,cacheUntil:'2000-01-01T00:00:00Z'}));
+  const cacheKey='https://monitor.example/__news_cache_hub_v3/2026-10-19/2026-10-25';map.set(cacheKey,Response.json({...first,cacheUntil:'2000-01-01T00:00:00Z'}));
   assert.equal((await(await worker.fetch(req(),env)).json()).cached,false);assert.equal(count,9);
  }finally{globalThis.fetch=originalFetch;globalThis.caches=originalCache;}
 });
@@ -39,3 +39,5 @@ test('Naver auth failure is not cached as a successful empty report',async()=>{
  globalThis.caches={default:{match:async()=>undefined,put:async()=>{puts++;}}};globalThis.fetch=async()=>new Response('',{status:401});
  try{const r=await(await worker.fetch(req(),env)).json();assert.equal(puts,0);assert.ok(r.statuses.every(x=>x.state==='error'));assert.match(r.statuses[0].detail,/인증키/);}finally{globalThis.fetch=originalFetch;globalThis.caches=originalCache;}
 });
+
+
