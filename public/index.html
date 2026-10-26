@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive"><title>김영사 · 미디어 모니터</title>
+  <link rel="stylesheet" href="/styles.css"><script type="module" src="/app.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/">김영사<span>MEDIA DESK</span></a>
+    <div class="workspace">콘텐츠사업팀 워크스페이스</div>
+    <div class="nav active"><span>▤</span> 주간 모니터링 <span class="dot"></span></div>
+    <div class="side-note"><span class="eyebrow">MONITORING SOURCES</span><p>김영사 · 주니어김영사</p><p>출판계 기관 공고</p></div>
+    <div class="side-bottom"><span class="lock">●</span> 팀 전용 공간<br><small>필요한 소식만, 한곳에.</small></div>
+  </aside>
+  <main>
+    <header><span>워크스페이스 <b>/</b> 주간 모니터링</span><span class="pill">INTERNAL ONLY</span></header>
+    <section class="intro"><div><div class="eyebrow">GIMMYOUNG MEDIA MONITOR</div><h1>한 주의 소식을 모으다.</h1><p>기사와 공고를 확인하고, 팀에 공유할 목록을 정리하세요.</p></div><span class="edition">MEDIA<br><strong>BRIEF.</strong></span></section>
+    <section class="toolbar" aria-label="수집 기간">
+      <div><label for="start">수집 기간 <span>한국시간 기준 · 최대 31일</span></label><div class="dates"><input id="start" type="date" required aria-label="시작일"><span>—</span><input id="end" type="date" required aria-label="종료일"><button id="last-week" class="subtle">지난주</button></div></div>
+      <button id="collect" class="primary">↻ &nbsp; 수집하기</button>
+    </section>
+    <div id="message" class="message" role="status" aria-live="polite">설정을 확인하고 있습니다.</div>
+    <section class="stats"><div><span>수집한 기사</span><strong id="total">0</strong></div><div><span>공유할 항목</span><strong id="selected">0</strong></div><div><span>기관 공고</span><strong class="small-number">연결 대기</strong></div><div><span>최근 수집</span><strong id="collected-at" class="small-number">아직 없음</strong></div></section>
+    <div class="content-grid"><section class="results panel"><div class="panel-heading"><h2>수집 결과</h2><button id="demo" class="text-button">화면 예시 보기</button></div><div class="tabs" role="group" aria-label="분류"><button class="active" data-filter="전체">전체</button><button data-filter="김영사">김영사</button><button data-filter="주니어김영사">주니어김영사</button><button data-filter="공통">공통</button><button data-filter="분류 확인 필요">확인 필요</button></div><div class="list-toolbar"><label><input id="select-all" type="checkbox"> 현재 목록 전체 선택</label><span id="list-count">0건</span></div><div id="articles"></div></section>
+      <aside class="right-column"><section class="panel export"><span class="eyebrow">READY TO SHARE</span><h2>공유할 목록</h2><p>선택한 항목을 텍스트로 정리합니다.<br>복사해서 메일에 붙여넣으세요.</p><button id="copy" class="primary" disabled>선택한 항목 복사</button><button id="download" class="secondary" disabled>↓ &nbsp; TXT 다운로드</button><details><summary>텍스트 미리보기</summary><pre id="text-preview"></pre></details><small>제목·출처는 목록에서 바로 수정할 수 있습니다.<br>새로고침하면 편집 내용이 사라집니다.</small></section><section class="panel source-panel"><h2>수집 상태</h2><div id="sources"></div></section></aside></div>
+    <section class="panel notices"><div class="panel-heading"><div><div class="eyebrow">PUBLISHING NOTICES</div><h2>출판계 주요 공고</h2></div><span class="badge pending">자동 수집 연결 대기</span></div><p>현재 베이스에서는 기관 게시판을 직접 확인할 수 있습니다. 공고 0건을 뜻하지 않습니다.</p><div id="institutions" class="institution-grid"></div></section>
+    <footer>김영사 · 주니어김영사 <span>팀 내부용 미디어 모니터 · v0.1</span></footer>
+  </main>
+</body></html>

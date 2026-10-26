@@ -1,0 +1,58 @@
+import { authorize } from './auth.js';
+import { rangeOf, normalizeNews, dedupe } from './core.js';
+const institutions = [
+  { name:'대한출판문화협회', url:'https://member.kpa21.or.kr/kpa_bbs/', detail:'자동 접근 확인 화면이 확인되어 수집 연결 대기 중입니다.' },
+  { name:'한국출판인회의', url:'https://www.kopus.org/publishernotice/', detail:'접근 오류가 확인되어 수집 연결 대기 중입니다.' },
+  { name:'한국출판문화산업진흥원', url:'https://www.kpipa.or.kr/p/g1_2', detail:'게시판 전용 수집기 연결 전입니다. 원문에서 확인해주세요.' }
+];
+function secure(response) {
+  const r=new Response(response.body,response);
+  for(const [k,v] of Object.entries({
+    'X-Robots-Tag':'noindex, nofollow, noarchive, nosnippet',
+    'Cache-Control':'private, no-store',
+    'X-Content-Type-Options':'nosniff',
+    'Referrer-Policy':'no-referrer',
+    'X-Frame-Options':'DENY',
+    'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+  })) r.headers.set(k,v);
+  return r;
+}
+const json=(data,status=200)=>secure(Response.json(data,{status}));
+export async function collectNews(env, range) {
+  const items=[], statuses=[];
+  if(!env.NAVER_CLIENT_ID || !env.NAVER_CLIENT_SECRET) return {items, statuses:[{name:'네이버 뉴스',state:'setup',detail:'네이버 검색 API 인증키를 서버에 등록해야 합니다.'}]};
+  for(const query of ['김영사','주니어김영사','주니어 김영사']) {
+    let complete=false;
+    try {
+      for(let start=1; start<=901; start+=100) {
+        const u=new URL('https://openapi.naver.com/v1/search/news.json');
+        u.search=new URLSearchParams({query,display:'100',sort:'date',start:String(start)});
+        const r=await fetch(u,{headers:{'X-Naver-Client-Id':env.NAVER_CLIENT_ID,'X-Naver-Client-Secret':env.NAVER_CLIENT_SECRET},signal:AbortSignal.timeout(12000)});
+        if(!r.ok) throw new Error(`검색 서버 응답 오류 (${r.status})`);
+        const data=await r.json(); if(!Array.isArray(data.items)) throw new Error('검색 응답 형식을 확인할 수 없습니다.');
+        for(const raw of data.items) { const item=normalizeNews(raw,query,range); if(item) items.push(item); }
+        if(data.items.length<100 || start+data.items.length-1>=data.total || data.items.some(x=>Date.parse(x.pubDate)<range.from)) {complete=true;break;}
+      }
+      statuses.push({name:query,state:complete?'ok':'partial',detail:complete?'검색 완료':'검색 결과 1,000건 한도에 도달했습니다. 선택 기간의 일부 기사가 누락될 수 있습니다.'});
+    } catch(e) { statuses.push({name:query,state:'error',detail:e.name==='TimeoutError'?'검색 응답 시간이 초과되었습니다. 다시 시도해주세요.':e.message}); }
+  }
+  return {items:dedupe(items),statuses};
+}
+export default { async fetch(request,env) {
+  const url=new URL(request.url);
+  if(url.pathname==='/robots.txt') return secure(new Response('User-agent: *\nDisallow: /\n',{headers:{'Content-Type':'text/plain;charset=utf-8'}}));
+  const identity=await authorize(request,env);
+  if(!identity.ok) return json({error:identity.status===503?'팀 접근 설정이 완료되지 않았습니다.':'허용된 팀원 인증이 필요합니다.'},identity.status);
+  if(url.pathname==='/api/config') return json({newsReady:!!(env.NAVER_CLIENT_ID&&env.NAVER_CLIENT_SECRET),institutions});
+  if(url.pathname==='/api/collect') {
+    if(request.method!=='POST') return json({error:'허용되지 않은 요청입니다.'},405);
+    if(request.headers.get('Origin')!==url.origin) return json({error:'동일 사이트에서만 수집할 수 있습니다.'},403);
+    if(!request.headers.get('Content-Type')?.startsWith('application/json')) return json({error:'JSON 요청이 필요합니다.'},415);
+    let range;
+    try {const text=await request.text(); if(text.length>1024) throw new Error('요청이 너무 큽니다.'); const body=JSON.parse(text); range=rangeOf(body.start,body.end);} catch(e) {return json({error:e.message},400);}
+    const result=await collectNews(env,range);
+    return json({...result,start:range.start,end:range.end,collectedAt:new Date().toISOString(),institutions:institutions.map(x=>({...x,state:'pending'}))});
+  }
+  if(url.pathname.startsWith('/api/')) return json({error:'찾을 수 없는 경로입니다.'},404);
+  return secure(await env.ASSETS.fetch(request));
+}};
