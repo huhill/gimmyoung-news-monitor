@@ -33,16 +33,6 @@ test('인증 설정 누락과 위조 토큰은 차단',async()=>{
 test('인증키 없는 뉴스 수집은 빈 결과 성공으로 보고하지 않음',async()=>{
   const result=await collectNews({},range);assert.equal(result.statuses[0].state,'setup');
 });
-test('JWT 서명, audience, 만료, 팀 이메일을 검증',async()=>{
-  const pair=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
-  const jwk=await crypto.subtle.exportKey('jwk',pair.publicKey);jwk.kid='test';
-  const original=globalThis.fetch;globalThis.fetch=async()=>Response.json({keys:[jwk]});
-  const env={ACCESS_TEAM_DOMAIN:'test-team.cloudflareaccess.com',ACCESS_AUD:'test-aud',ALLOWED_EMAILS:'member@example.com'};
-  const encode=x=>Buffer.from(JSON.stringify(x)).toString('base64url');
-  const payload={iss:'https://test-team.cloudflareaccess.com',aud:['test-aud'],sub:'id',email:'member@example.com',iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+60};
-  async function req(p,tamper=false){const data=encode({alg:'RS256',kid:'test'})+'.'+encode(p);const sig=Buffer.from(await crypto.subtle.sign('RSASSA-PKCS1-v1_5',pair.privateKey,new TextEncoder().encode(data))).toString('base64url');return new Request('https://monitor.example/',{headers:{'Cf-Access-Jwt-Assertion':data+'.'+(tamper?'AA':sig)}});}
-  try{assert.equal((await authorize(await req(payload),env)).ok,true);assert.equal((await authorize(await req({...payload,email:'outsider@example.com'}),env)).status,403);assert.equal((await authorize(await req({...payload,exp:1}),env)).status,401);assert.equal((await authorize(await req({...payload,aud:['wrong']}),env)).status,401);assert.equal((await authorize(await req(payload,true),env)).status,401);}finally{globalThis.fetch=original;}
-});
 test('검색어 세 개 수집 및 중복 통합',async()=>{
   const original=globalThis.fetch;let calls=0;
   globalThis.fetch=async()=>{calls++;return Response.json({total:1,items:[raw('2026-10-20')]});};

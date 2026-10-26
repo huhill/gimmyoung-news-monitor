@@ -9,7 +9,7 @@
 - 김영사 / 주니어김영사 / 공통 / 분류 확인 필요 분류
 - 항목 선택, 제목·출처 수정, 복사, UTF-8 BOM TXT 다운로드
 - 예시 보기: 명시적으로 표시된 가상 데이터이며 실제 뉴스가 아닙니다.
-- Cloudflare Access JWT 서명·발급자·대상·만료 검증 및 팀원 이메일 허용 목록
+- 공용 비밀번호 로그인 · 서명된 8시간 쿠키 · 로그아웃
 - 전체 화면/정적 파일/API 인증, noindex, robots.txt, no-store, CSP
 
 ## 아직 연결되지 않은 부분
@@ -34,26 +34,23 @@ npm run preview
 
 `http://127.0.0.1:4173`은 화면 전용 미리보기입니다. 실제 검색이나 인증 우회 기능이 없고 loopback에만 바인딩됩니다. `npm run dev`의 Worker는 인증 설정이 없으면 차단되는 것이 정상입니다.
 
-## Cloudflare 배포
+## Cloudflare 배포 및 비밀번호 설정
 
-1. Cloudflare Workers & Pages에서 GitHub 저장소를 연결합니다. Worker 이름은 `gimmyoung-news-monitor`, 루트 디렉터리는 저장소 루트, 배포 명령은 `npx wrangler deploy`로 지정합니다. 별도 프런트엔드 빌드는 없습니다. 배포 전 `npm test && npm run check`를 실행하도록 설정할 수 있습니다.
-2. Cloudflare에 연결된 도메인의 전용 서브도메인(예: 실제 소유한 도메인의 monitor)을 Worker Custom Domain으로 지정합니다. `workers_dev: false`, `preview_urls: false`를 유지하여 기본·미리보기 주소를 통한 우회를 막습니다.
-3. Cloudflare Zero Trust → Access → Applications에서 해당 호스트 **전체 경로**를 보호하는 Self-hosted 애플리케이션을 만듭니다. Allow에는 실제 팀원 이메일만 지정하고 One-time PIN 또는 회사 로그인 공급자를 연결합니다. Everyone, Bypass, Service Auth 정책은 추가하지 않습니다.
-4. 해당 Access 애플리케이션의 AUD와 조직 Team domain을 확인하고 아래 변수/Secret을 Worker Settings에 등록합니다. `.env.example`은 이름 안내용이며 자동 적용되지 않습니다.
+GitHub 저장소를 Worker에 연결합니다. 이름은 gimmyoung-news-monitor, 빌드 명령은 npm run check, 배포 명령은 npx wrangler deploy입니다. 기본 workers.dev 주소를 사용하며 별도 도메인이나 Zero Trust 가입은 필요하지 않습니다.
+
+Worker → Settings → Runtime variables and secrets → Add variable에서 Type을 Secret으로 선택합니다.
 
 | 이름 | 값 |
 |---|---|
-| ACCESS_TEAM_DOMAIN | `조직이름.cloudflareaccess.com` (https 없이) |
-| ACCESS_AUD | 해당 Access 애플리케이션 AUD |
-| ALLOWED_EMAILS | 실제 팀원 이메일을 쉼표로 구분 |
-| NAVER_CLIENT_ID | 네이버 검색 API Client ID (Secret) |
-| NAVER_CLIENT_SECRET | 네이버 검색 API Client Secret (Secret) |
+| APP_PASSWORD | 팀이 공유할 12자 이상 임의 비밀번호 또는 긴 암호문구 |
+| NAVER_CLIENT_ID | 네이버 검색 API Client ID |
+| NAVER_CLIENT_SECRET | 네이버 검색 API Client Secret |
 
-5. 배포 후 로그아웃 상태와 외부 계정에서 화면 및 `/api/collect`가 차단되는지, 팀원 로그인 후 접근 가능한지 확인합니다. 네이버 키 등록 후 실제 기사 검색·복사·TXT 다운로드를 검증합니다.
+APP_PASSWORD를 저장·배포한 뒤 사이트에서 비밀번호를 입력하면 됩니다. 키 등록 전에도 화면은 사용할 수 있지만 실제 뉴스 수집에는 네이버 인증키가 필요합니다. 비밀번호는 GitHub나 채팅에 쓰지 마세요. 이전 ACCESS_TEAM_DOMAIN / ACCESS_AUD / ALLOWED_EMAILS는 더 이상 사용하지 않습니다.
 
-필수 접근 설정이 누락되면 모든 화면/API는 503으로 차단합니다. robots.txt만 공개되며 `Disallow: /`를 반환합니다. 비밀키는 코드·GitHub·브라우저에 넣지 않습니다. GitHub 저장소도 팀 전용 관리가 필요하면 Private으로 설정하세요.
+화면/수집 API는 로그인해야 사용할 수 있습니다. 로그인 화면·스타일·robots.txt만 공개됩니다. 비밀번호가 없거나 12자 미만이면 닫힌 상태로 유지됩니다. 로그인은 8시간 유지되며 HttpOnly/Secure/SameSite 쿠키를 사용합니다. 비밀번호 변경 시 이전 세션이 무효화됩니다. 개별 로그아웃은 현재 브라우저 쿠키를 삭제하며, 이미 탈취된 쿠키 자체를 취소하려면 공용 비밀번호를 변경해야 합니다.
 
-인증되지 않은 검색 봇/외부 수집기를 막는 구조입니다. 허용된 팀원의 계정·세션을 이용한 자동화나 수동 복사까지 원천 차단한다는 의미는 아닙니다. 검색 제외 헤더만으로 접근 제어가 되지 않으므로 Access 설정을 반드시 완료해야 합니다.
+로그인 실패 시 IP별 5분/10회 제한이 있습니다. Worker 실행 인스턴스 메모리 기반의 보조 제한이므로 전역·분산 공격 방어를 보장하지 않습니다. 추측하기 어려운 비밀번호를 사용하세요. noindex와 robots.txt는 검색 제외 안내이며, 접근 차단은 서버 로그인 검증이 담당합니다.
 
 ## 다음 개발 단계
 

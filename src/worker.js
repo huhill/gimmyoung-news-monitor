@@ -1,4 +1,4 @@
-import { authorize } from './auth.js';
+import { authorize, login, loginPage, clearCookie } from './auth.js';
 import { rangeOf, normalizeNews, dedupe } from './core.js';
 const institutions = [
   { name:'대한출판문화협회', url:'https://member.kpa21.or.kr/kpa_bbs/', detail:'자동 접근 확인 화면이 확인되어 수집 연결 대기 중입니다.' },
@@ -41,8 +41,23 @@ export async function collectNews(env, range) {
 export default { async fetch(request,env) {
   const url=new URL(request.url);
   if(url.pathname==='/robots.txt') return secure(new Response('User-agent: *\nDisallow: /\n',{headers:{'Content-Type':'text/plain;charset=utf-8'}}));
+  if(url.pathname==='/styles.css')return secure(await env.ASSETS.fetch(request));
+  if(url.pathname==='/login'){
+    if(request.method==='GET')return secure(new Response(loginPage(),{headers:{'Content-Type':'text/html;charset=utf-8'}}));
+    if(request.method!=='POST')return json({error:'허용되지 않은 요청입니다.'},405);
+    const result=await login(request,env);
+    if(result.cookie)return secure(new Response(null,{status:303,headers:{Location:'/','Set-Cookie':result.cookie}}));
+    return secure(new Response(loginPage(result.error),{status:result.status,headers:{'Content-Type':'text/html;charset=utf-8'}}));
+  }
+  if(url.pathname==='/logout'){
+    if(request.method!=='POST'||request.headers.get('Origin')!==url.origin)return json({error:'허용되지 않은 요청입니다.'},403);
+    return secure(new Response(null,{status:303,headers:{Location:'/login','Set-Cookie':clearCookie()}}));
+  }
   const identity=await authorize(request,env);
-  if(!identity.ok) return json({error:identity.status===503?'팀 접근 설정이 완료되지 않았습니다.':'허용된 팀원 인증이 필요합니다.'},identity.status);
+  if(!identity.ok){
+    if(url.pathname.startsWith('/api/'))return json({error:identity.status===503?'APP_PASSWORD 설정이 필요합니다.':'로그인이 필요합니다. 페이지를 새로고침해주세요.'},identity.status);
+    return secure(new Response(loginPage(identity.status===503?'관리자가 APP_PASSWORD를 등록하면 사용할 수 있습니다.':''),{status:identity.status===503?503:200,headers:{'Content-Type':'text/html;charset=utf-8'}}));
+  }
   if(url.pathname==='/api/config') return json({newsReady:!!(env.NAVER_CLIENT_ID&&env.NAVER_CLIENT_SECRET),institutions});
   if(url.pathname==='/api/collect') {
     if(request.method!=='POST') return json({error:'허용되지 않은 요청입니다.'},405);
