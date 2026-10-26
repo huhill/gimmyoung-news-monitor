@@ -4,16 +4,22 @@
 
 ## 네이버 연결
 
-1. https://developers.naver.com/apps/#/register 에서 애플리케이션을 등록합니다. 이름은 김영사 미디어 모니터, 사용 API는 **검색**입니다. 웹 서비스 URL 입력란이 있으면 https://gimmyoung-news-monitor.huhil92.workers.dev 를 입력합니다.
-2. 발급된 Client ID와 Client Secret을 확인합니다.
-3. Cloudflare → Workers & Pages → gimmyoung-news-monitor → Settings → Runtime variables and secrets → Add variable에서 각각 **Secret**으로 등록합니다.
+기존 개발자센터는 2026-07-31부터 검색 API 신규 신청을 받지 않습니다. 신규 신청은 네이버 클라우드 플랫폼의 NAVER API HUB에서 진행합니다.
+
+**비용:** 2026-10-26 확인 기준 공식 문서는 한시적 무료라고 안내하며, 유료 전환 시 사전 공지 예정입니다. 영구 무료가 아닙니다. 가입 전에 콘솔의 최신 요금과 약관을 확인하세요.
+
+1. https://www.ncloud.com 에서 로그인 후 콘솔로 이동합니다.
+2. All Services → Application Services → NAVER API HUB → Subscription에서 이용 신청 안내와 요금/약관을 확인합니다.
+3. Application → Application 등록에서 검색 API를 선택하고 이름을 김영사 미디어 모니터로 등록합니다.
+4. 등록한 Application의 인증 정보에서 Client ID와 Client Secret을 확인합니다. 계정 전체 Access Key가 아닌 API HUB 애플리케이션 키입니다.
+5. Cloudflare → Workers & Pages → gimmyoung-news-monitor → Settings → Runtime variables and secrets → Add variable에서 각각 **Secret**으로 등록합니다.
 
 | Name | Value |
 |---|---|
 | NAVER_CLIENT_ID | 발급된 Client ID |
 | NAVER_CLIENT_SECRET | 발급된 Client Secret |
 
-4. 저장·배포 후 사이트에서 기간을 선택하고 수집하기를 누릅니다. 키를 GitHub, 채팅, 브라우저 코드에 넣지 않습니다. 과거 APP_PASSWORD 및 ACCESS_* 설정은 더 이상 사용하지 않습니다.
+6. 저장·배포 후 사이트에서 기간을 선택하고 수집하기를 누릅니다. 키를 GitHub, 채팅, 브라우저 코드에 넣지 않습니다. 과거 APP_PASSWORD 및 ACCESS_* 설정은 더 이상 사용하지 않습니다.
 
 ## 배포
 
@@ -48,6 +54,9 @@ Node.js 22 이상: npm install → npm test → npm run check. npm run preview�
 
 ## 참고
 
-- https://developers.naver.com/docs/serviceapi/search/news/news.md
+- https://api.ncloud-docs.com/docs/naver-api-hub-search-news
 - https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
 - https://developers.cloudflare.com/workers/ci-cd/builds/git-integration/github-integration/
+
+- 이관 안내: https://guide.ncloud-docs.com/docs/apihub-migration
+- 한시적 무료 안내: https://guide.ncloud-docs.com/docs/apihub-overview

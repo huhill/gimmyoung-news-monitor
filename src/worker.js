@@ -25,9 +25,9 @@ export async function collectNews(env, range) {
     let complete=false;
     try {
       for(let start=1; start<=901; start+=100) {
-        const u=new URL('https://openapi.naver.com/v1/search/news.json');
-        u.search=new URLSearchParams({query,display:'100',sort:'date',start:String(start)});
-        const r=await fetch(u,{headers:{'X-Naver-Client-Id':env.NAVER_CLIENT_ID,'X-Naver-Client-Secret':env.NAVER_CLIENT_SECRET},signal:AbortSignal.timeout(12000)});
+        const u=new URL('https://naverapihub.apigw.ntruss.com/search/v1/news');
+        u.search=new URLSearchParams({query,display:'100',sort:'date',start:String(start),format:'json'});
+        const r=await fetch(u,{headers:{'X-NCP-APIGW-API-KEY-ID':env.NAVER_CLIENT_ID,'X-NCP-APIGW-API-KEY':env.NAVER_CLIENT_SECRET},signal:AbortSignal.timeout(12000)});
         if(!r.ok) throw new Error(r.status===401?'네이버 인증키가 올바르지 않습니다. Client ID와 Client Secret을 확인해주세요.':r.status===403?'네이버 애플리케이션의 검색 API 권한을 확인해주세요.':r.status===429?'네이버 API 호출 한도에 도달했습니다. 잠시 후 다시 시도해주세요.':`검색 서버 응답 오류 (${r.status})`);
         const data=await r.json(); if(!Array.isArray(data.items)) throw new Error('검색 응답 형식을 확인할 수 없습니다.');
         for(const raw of data.items) { const item=normalizeNews(raw,query,range); if(item) items.push(item); }
@@ -53,7 +53,7 @@ export default { async fetch(request,env) {
     try {const text=await limitedBody(request); const body=JSON.parse(text); range=rangeOf(body.start,body.end);} catch(e) {return json({error:e.message},400);}
     if(!env.NAVER_CLIENT_ID||!env.NAVER_CLIENT_SECRET)return json({error:'Cloudflare에 NAVER_CLIENT_ID와 NAVER_CLIENT_SECRET을 Secret으로 등록해주세요.'},503);
     const cache=globalThis.caches?.default;
-    const cacheKey=new Request(url.origin+'/__news_cache_v1/'+range.start+'/'+range.end);
+    const cacheKey=new Request(url.origin+'/__news_cache_hub_v2/'+range.start+'/'+range.end);
     try {const hit=await cache?.match(cacheKey);if(hit){const data=await hit.json();if(Date.parse(data.cacheUntil)>Date.now())return json({...data,cached:true});}}catch{/* Cache failure must not prevent collection. */}
     const result=await collectNews(env,range);
     const data={...result,start:range.start,end:range.end,collectedAt:new Date().toISOString(),cached:false,institutions:institutions.map(x=>({...x,state:'pending'}))};
