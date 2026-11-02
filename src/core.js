@@ -22,8 +22,10 @@ export function classify(text, query) {
   const s = text.replace(/\s/g, '');
   const junior = s.includes('주니어김영사');
   const general = s.replaceAll('주니어김영사', '').includes('김영사');
-  if (junior && general) return '공통';
+  const bichae = s.includes('비채');
+  if ([junior,general,bichae].filter(Boolean).length > 1) return '공통';
   if (junior || query.replace(/\s/g,'') === '주니어김영사') return '주니어김영사';
+  if (bichae || query === '비채') return '비채';
   return general ? '김영사' : '분류 확인 필요';
 }
 export function normalizeNews(raw, query, range) {

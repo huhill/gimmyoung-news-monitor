@@ -27,11 +27,11 @@ test('same range uses five-minute cache, different range fetches again, expired 
  globalThis.caches={default:{match:async r=>map.get(r.url)?.clone(),put:async(r,response)=>{map.set(r.url,response.clone());}}};
  globalThis.fetch=async()=>{count++;return Response.json({total:1,items:[{title:'김영사 신간',description:'김영사',pubDate:'2026-10-20T00:00:00+09:00',link:'https://news.example/a',originallink:'https://news.example/a'}]});};
  try{
-  const first=await(await worker.fetch(req(),env)).json();assert.equal(first.cached,false);assert.equal(count,3);
-  const again=await(await worker.fetch(req(),env)).json();assert.equal(again.cached,true);assert.equal(count,3);assert.equal(again.collectedAt,first.collectedAt);
-  await worker.fetch(req({start:'2026-10-20',end:'2026-10-25'}),env);assert.equal(count,6);
-  const cacheKey='https://monitor.example/__news_cache_hub_v3/2026-10-19/2026-10-25';map.set(cacheKey,Response.json({...first,cacheUntil:'2000-01-01T00:00:00Z'}));
-  assert.equal((await(await worker.fetch(req(),env)).json()).cached,false);assert.equal(count,9);
+  const first=await(await worker.fetch(req(),env)).json();assert.equal(first.cached,false);assert.equal(count,4);
+  const again=await(await worker.fetch(req(),env)).json();assert.equal(again.cached,true);assert.equal(count,4);assert.equal(again.collectedAt,first.collectedAt);
+  await worker.fetch(req({start:'2026-10-20',end:'2026-10-25'}),env);assert.equal(count,8);
+  const cacheKey='https://monitor.example/__news_cache_hub_v4/2026-10-19/2026-10-25?extra=%5B%5D';map.set(cacheKey,Response.json({...first,cacheUntil:'2000-01-01T00:00:00Z'}));
+  assert.equal((await(await worker.fetch(req(),env)).json()).cached,false);assert.equal(count,12);
  }finally{globalThis.fetch=originalFetch;globalThis.caches=originalCache;}
 });
 test('Naver auth failure is not cached as a successful empty report',async()=>{

@@ -2,7 +2,7 @@
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 const root=new URL('../public/',import.meta.url);
-const paths={'/':'index.html','/app.js':'app.js','/styles.css':'styles.css'};
+const paths={'/':'index.html','/app.js':'app.js','/model.js':'model.js','/styles.css':'styles.css'};
 const types={html:'text/html;charset=utf-8',js:'text/javascript;charset=utf-8',css:'text/css;charset=utf-8'};
 createServer(async(req,res)=>{
   const path=new URL(req.url,'http://127.0.0.1').pathname;

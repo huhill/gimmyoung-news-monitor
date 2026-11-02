@@ -26,15 +26,15 @@ test('링크 및 검색 결과 정리',()=>{assert.equal(safeURL('javascript:ale
 test('인증키 없는 뉴스 수집은 빈 결과 성공으로 보고하지 않음',async()=>{
   const result=await collectNews({},range);assert.equal(result.statuses[0].state,'setup');
 });
-test('검색어 세 개 수집 및 중복 통합',async()=>{
+test('검색어 네 개 수집 및 중복 통합',async()=>{
   const original=globalThis.fetch;let calls=0;
   globalThis.fetch=async()=>{calls++;return Response.json({total:1,items:[raw('2026-10-20')]});};
-  try{const r=await collectNews({NAVER_CLIENT_ID:'test',NAVER_CLIENT_SECRET:'test'},range);assert.equal(calls,3);assert.equal(r.items.length,1);assert.ok(r.statuses.every(x=>x.state==='ok'));}finally{globalThis.fetch=original;}
+  try{const r=await collectNews({NAVER_CLIENT_ID:'test',NAVER_CLIENT_SECRET:'test'},range);assert.equal(calls,4);assert.equal(r.items.length,1);assert.ok(r.statuses.every(x=>x.state==='ok'));}finally{globalThis.fetch=original;}
 });
 test('최신 결과 다음 페이지에서 기간 내 기사를 찾음',async()=>{
   const original=globalThis.fetch;let calls=0;
   globalThis.fetch=async url=>{calls++;const start=new URL(url).searchParams.get('start');return Response.json(start==='1'?{total:101,items:Array.from({length:100},()=>raw('2026-10-26'))}:{total:101,items:[raw('2026-10-20')]});};
-  try{const r=await collectNews({NAVER_CLIENT_ID:'test',NAVER_CLIENT_SECRET:'test'},range);assert.equal(calls,6);assert.equal(r.items.length,1);assert.ok(r.statuses.every(x=>x.state==='ok'));}finally{globalThis.fetch=original;}
+  try{const r=await collectNews({NAVER_CLIENT_ID:'test',NAVER_CLIENT_SECRET:'test'},range);assert.equal(calls,8);assert.equal(r.items.length,1);assert.ok(r.statuses.every(x=>x.state==='ok'));}finally{globalThis.fetch=original;}
 });
 test('실패한 검색어가 있어도 다른 검색어 결과는 보존',async()=>{
   const original=globalThis.fetch;
@@ -46,3 +46,4 @@ test('API 검색 상한에 도달하면 완료 대신 부분 수집',async()=>{
   globalThis.fetch=async()=>Response.json({total:3000,items:Array.from({length:100},()=>raw('2026-10-26'))});
   try{const r=await collectNews({NAVER_CLIENT_ID:'test',NAVER_CLIENT_SECRET:'test'},range);assert.ok(r.statuses.every(x=>x.state==='partial'));}finally{globalThis.fetch=original;}
 });
+

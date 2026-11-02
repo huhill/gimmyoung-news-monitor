@@ -1,5 +1,6 @@
 import { collectionGate, limitedBody } from './limits.js';
 import { rangeOf, normalizeNews, dedupe, clean, pressName } from './core.js';
+import { issueTicket, verifyArticle, collectNotices } from './research.js';
 // Read publisher-provided metadata, never infer a publisher from the headline.
 export function metadataPress(html) {
   for (const tag of html.replace(/<!--[\s\S]*?-->/g, '').match(/<meta\b[^>]*>/gi) || []) {
@@ -66,13 +67,13 @@ function secure(response) {
   return r;
 }
 const json=(data,status=200)=>secure(Response.json(data,{status}));
-export async function collectNews(env, range) {
+export async function collectNews(env, range, extra=[]) {
   const items=[], statuses=[];
   if(!env.NAVER_CLIENT_ID || !env.NAVER_CLIENT_SECRET) return {items, statuses:[{name:'네이버 뉴스',state:'setup',detail:'네이버 검색 API 인증키를 서버에 등록해야 합니다.'}]};
-  for(const query of ['김영사','주니어김영사','주니어 김영사']) {
+  for(const query of [...new Set(['김영사','비채','주니어김영사','주니어 김영사',...extra])]) {
     let complete=false;
     try {
-      for(let start=1; start<=901; start+=100) {
+      for(let start=1; start<=401; start+=100) {
         const u=new URL('https://naverapihub.apigw.ntruss.com/search/v1/news');
         u.search=new URLSearchParams({query,display:'100',sort:'date',start:String(start),format:'json'});
         const r=await fetch(u,{headers:{'X-NCP-APIGW-API-KEY-ID':env.NAVER_CLIENT_ID,'X-NCP-APIGW-API-KEY':env.NAVER_CLIENT_SECRET},signal:AbortSignal.timeout(12000)});
@@ -81,7 +82,7 @@ export async function collectNews(env, range) {
         for(const raw of data.items) { const item=normalizeNews(raw,query,range); if(item) items.push(item); }
         if(data.items.length<100 || start+data.items.length-1>=data.total || data.items.some(x=>Date.parse(x.pubDate)<range.from)) {complete=true;break;}
       }
-      statuses.push({name:query,state:complete?'ok':'partial',detail:complete?'검색 완료':'검색 결과 1,000건 한도에 도달했습니다. 선택 기간의 일부 기사가 누락될 수 있습니다.'});
+      statuses.push({name:query,state:complete?'ok':'partial',detail:complete?'해당 검색어 조회 완료 · 전체 언론 전수조사는 아닙니다.':'검색어당 500건 조회 한도에 도달했습니다. 선택 기간의 일부 기사가 누락될 수 있습니다.'});
     } catch(e) { statuses.push({name:query,state:'error',detail:e.name==='TimeoutError'?'검색 응답 시간이 초과되었습니다. 다시 시도해주세요.':e.message}); }
   }
   return {items:dedupe(items),statuses};
@@ -91,20 +92,31 @@ export default { async fetch(request,env) {
   if(url.pathname==='/robots.txt') return secure(new Response('User-agent: *\nDisallow: /\n',{headers:{'Content-Type':'text/plain;charset=utf-8'}}));
   if(url.pathname==='/login'||url.pathname==='/logout')return secure(new Response(null,{status:303,headers:{Location:'/'}}));
   if(url.pathname==='/api/config') return json({newsReady:!!(env.NAVER_CLIENT_ID&&env.NAVER_CLIENT_SECRET),institutions});
+  if(['/api/verify','/api/notices'].includes(url.pathname)){
+    if(request.method!=='POST')return json({error:'POST 요청이 필요합니다.'},405);
+    if(request.headers.get('Origin')!==url.origin)return json({error:'동일 사이트에서 요청해주세요.'},403);
+    if(!request.headers.get('Content-Type')?.startsWith('application/json'))return json({error:'JSON 요청이 필요합니다.'},415);
+    const gate=await collectionGate(request,env);if(gate)return gate;
+    try{const body=JSON.parse(await limitedBody(request));
+      if(url.pathname==='/api/verify')return json(await verifyArticle(body,env.NAVER_CLIENT_SECRET));
+      return json(await collectNotices(rangeOf(body.start,body.end)));
+    }catch(e){return json({error:e.message},400);}
+  }
   if(url.pathname==='/api/collect') {
     if(request.method!=='POST') return json({error:'허용되지 않은 요청입니다.'},405);
     if(request.headers.get('Origin')!==url.origin) return json({error:'동일 사이트에서만 수집할 수 있습니다.'},403);
     if(!request.headers.get('Content-Type')?.startsWith('application/json')) return json({error:'JSON 요청이 필요합니다.'},415);
     const gate=await collectionGate(request,env);
     if(gate)return gate;
-    let range;
-    try {const text=await limitedBody(request); const body=JSON.parse(text); range=rangeOf(body.start,body.end);} catch(e) {return json({error:e.message},400);}
+    let range,extra;
+    try {const text=await limitedBody(request); const body=JSON.parse(text); range=rangeOf(body.start,body.end);extra=body.extra||[];if(!Array.isArray(extra)||extra.length>3||extra.some(x=>typeof x!=='string'||!x.trim()||x.length>100))throw new Error('추가 검색어는 100자 이내로 최대 3개입니다.');extra=extra.map(x=>x.trim());} catch(e) {return json({error:e.message},400);}
     if(!env.NAVER_CLIENT_ID||!env.NAVER_CLIENT_SECRET)return json({error:'Cloudflare에 NAVER_CLIENT_ID와 NAVER_CLIENT_SECRET을 Secret으로 등록해주세요.'},503);
     const cache=globalThis.caches?.default;
-    const cacheKey=new Request(url.origin+'/__news_cache_hub_v3/'+range.start+'/'+range.end);
+    const cacheKey=new Request(url.origin+'/__news_cache_hub_v4/'+range.start+'/'+range.end+'?extra='+encodeURIComponent(JSON.stringify(extra)));
     try {const hit=await cache?.match(cacheKey);if(hit){const data=await hit.json();if(Date.parse(data.cacheUntil)>Date.now())return json({...data,cached:true});}}catch{/* Cache failure must not prevent collection. */}
-    const result=await collectNews(env,range);
+    const result=await collectNews(env,range,extra);
     await discoverPress(result.items,url.origin);
+    for(const item of result.items){item.ticket=await issueTicket(item.url,env.NAVER_CLIENT_SECRET);item.searchDate=item.date;item.review='pending';item.books=[];}
     const data={...result,start:range.start,end:range.end,collectedAt:new Date().toISOString(),cached:false,institutions:institutions.map(x=>({...x,state:'pending'}))};
     if(result.statuses.every(x=>x.state==='ok')){
       data.cacheUntil=new Date(Date.now()+300000).toISOString();
@@ -115,4 +127,3 @@ export default { async fetch(request,env) {
   if(url.pathname.startsWith('/api/')) return json({error:'찾을 수 없는 경로입니다.'},404);
   return secure(await env.ASSETS.fetch(request));
 }};
-
