@@ -1,6 +1,6 @@
 import { collectionGate, limitedBody } from './limits.js';
 import { rangeOf, normalizeNews, dedupe, clean, pressName } from './core.js';
-import { issueTicket, verifyArticle, collectNotices } from './research.js';
+import { confirmNews, collectNotices } from './research.js';
 // Read publisher-provided metadata, never infer a publisher from the headline.
 export function metadataPress(html) {
   for (const tag of html.replace(/<!--[\s\S]*?-->/g, '').match(/<meta\b[^>]*>/gi) || []) {
@@ -52,7 +52,7 @@ export async function discoverPress(items, origin) {
 const institutions = [
   { name:'대한출판문화협회', url:'https://member.kpa21.or.kr/kpa_bbs/', detail:'자동 접근 확인 화면이 확인되어 수집 연결 대기 중입니다.' },
   { name:'한국출판인회의', url:'https://www.kopus.org/publishernotice/', detail:'접근 오류가 확인되어 수집 연결 대기 중입니다.' },
-  { name:'한국출판문화산업진흥원', url:'https://www.kpipa.or.kr/p/g1_2', detail:'게시판 전용 수집기 연결 전입니다. 원문에서 확인해주세요.' }
+  { name:'한국출판문화산업진흥원', url:'https://www.kpipa.or.kr/p/g1_2', detail:'최근 게시물 자동 조회 · 접근 제한 시 수집 불가' }
 ];
 function secure(response) {
   const r=new Response(response.body,response);
@@ -67,10 +67,10 @@ function secure(response) {
   return r;
 }
 const json=(data,status=200)=>secure(Response.json(data,{status}));
-export async function collectNews(env, range, extra=[]) {
+export async function collectNews(env, range) {
   const items=[], statuses=[];
   if(!env.NAVER_CLIENT_ID || !env.NAVER_CLIENT_SECRET) return {items, statuses:[{name:'네이버 뉴스',state:'setup',detail:'네이버 검색 API 인증키를 서버에 등록해야 합니다.'}]};
-  for(const query of [...new Set(['김영사','비채','주니어김영사','주니어 김영사',...extra])]) {
+  for(const query of ['김영사','비채','주니어김영사','주니어 김영사']) {
     let complete=false;
     try {
       for(let start=1; start<=401; start+=100) {
@@ -92,13 +92,12 @@ export default { async fetch(request,env) {
   if(url.pathname==='/robots.txt') return secure(new Response('User-agent: *\nDisallow: /\n',{headers:{'Content-Type':'text/plain;charset=utf-8'}}));
   if(url.pathname==='/login'||url.pathname==='/logout')return secure(new Response(null,{status:303,headers:{Location:'/'}}));
   if(url.pathname==='/api/config') return json({newsReady:!!(env.NAVER_CLIENT_ID&&env.NAVER_CLIENT_SECRET),institutions});
-  if(['/api/verify','/api/notices'].includes(url.pathname)){
+  if(url.pathname==='/api/notices'){
     if(request.method!=='POST')return json({error:'POST 요청이 필요합니다.'},405);
     if(request.headers.get('Origin')!==url.origin)return json({error:'동일 사이트에서 요청해주세요.'},403);
     if(!request.headers.get('Content-Type')?.startsWith('application/json'))return json({error:'JSON 요청이 필요합니다.'},415);
     const gate=await collectionGate(request,env);if(gate)return gate;
     try{const body=JSON.parse(await limitedBody(request));
-      if(url.pathname==='/api/verify')return json(await verifyArticle(body,env.NAVER_CLIENT_SECRET));
       return json(await collectNotices(rangeOf(body.start,body.end)));
     }catch(e){return json({error:e.message},400);}
   }
@@ -108,15 +107,18 @@ export default { async fetch(request,env) {
     if(!request.headers.get('Content-Type')?.startsWith('application/json')) return json({error:'JSON 요청이 필요합니다.'},415);
     const gate=await collectionGate(request,env);
     if(gate)return gate;
-    let range,extra;
-    try {const text=await limitedBody(request); const body=JSON.parse(text); range=rangeOf(body.start,body.end);extra=body.extra||[];if(!Array.isArray(extra)||extra.length>3||extra.some(x=>typeof x!=='string'||!x.trim()||x.length>100))throw new Error('추가 검색어는 100자 이내로 최대 3개입니다.');extra=extra.map(x=>x.trim());} catch(e) {return json({error:e.message},400);}
+    let range;
+    try {const body=JSON.parse(await limitedBody(request)); range=rangeOf(body.start,body.end);} catch(e) {return json({error:e.message},400);}
     if(!env.NAVER_CLIENT_ID||!env.NAVER_CLIENT_SECRET)return json({error:'Cloudflare에 NAVER_CLIENT_ID와 NAVER_CLIENT_SECRET을 Secret으로 등록해주세요.'},503);
     const cache=globalThis.caches?.default;
-    const cacheKey=new Request(url.origin+'/__news_cache_hub_v4/'+range.start+'/'+range.end+'?extra='+encodeURIComponent(JSON.stringify(extra)));
+    const cacheKey=new Request(url.origin+'/__news_auto_v1/'+range.start+'/'+range.end);
     try {const hit=await cache?.match(cacheKey);if(hit){const data=await hit.json();if(Date.parse(data.cacheUntil)>Date.now())return json({...data,cached:true});}}catch{/* Cache failure must not prevent collection. */}
-    const result=await collectNews(env,range,extra);
-    await discoverPress(result.items,url.origin);
-    for(const item of result.items){item.ticket=await issueTicket(item.url,env.NAVER_CLIENT_SECRET);item.searchDate=item.date;item.review='pending';item.books=[];}
+    const result=await collectNews(env,range);
+    const confirmed=await confirmNews(result.items,range,(item,html)=>{
+      const known=pressName(item.url),host=new URL(item.url).hostname.replace(/^www\./,'');
+      return known!==host?known:(metadataPress(html)||known);
+    });
+    result.items=confirmed.items;result.counts=confirmed.counts;
     const data={...result,start:range.start,end:range.end,collectedAt:new Date().toISOString(),cached:false,institutions:institutions.map(x=>({...x,state:'pending'}))};
     if(result.statuses.every(x=>x.state==='ok')){
       data.cacheUntil=new Date(Date.now()+300000).toISOString();
